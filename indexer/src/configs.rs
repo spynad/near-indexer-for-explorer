@@ -6,6 +6,10 @@ use explorer_database::{adapters, models};
 use near_jsonrpc_client::{methods, JsonRpcClient};
 use near_lake_framework::near_indexer_primitives::types::{BlockReference, Finality};
 
+use aws_sdk_s3::{Config, Endpoint};
+use http::Uri;
+use aws_config;
+
 /// NEAR Indexer for Explorer Lake
 /// Watches for stream of blocks from the chain
 /// built on top of NEAR Lake Framework
@@ -22,6 +26,9 @@ pub(crate) struct Opts {
     /// Connection string to connect to the PostgreSQL Database to fetch AlertRules from
     #[clap(long, env)]
     pub database_url: String,
+    /// AWS S3 or S3-compatible endpoint URL
+    #[clap(long, env)]
+    pub aws_s3_endpoint: String,
     /// Enabled Indexer for Explorer debug level of logs
     #[clap(long)]
     pub debug: bool,
@@ -83,9 +90,21 @@ impl Opts {
                 .testnet()
                 .start_block_height(get_start_block_height(self).await),
         }
-        .build()
+            .s3_config(get_aws_s3_endpoint(self).await)
+            .build()
         .expect("Failed to build LakeConfig")
     }
+}
+
+async fn get_aws_s3_endpoint(opts: &Opts) -> Config {
+    let aws_config = aws_config::from_env().load().await;
+    let s3_conf_builder = aws_sdk_s3::config::Builder::from(&aws_config);
+    let s3_conf: Config = s3_conf_builder.
+        endpoint_resolver(
+            Endpoint::immutable(opts.aws_s3_endpoint.parse::<Uri>().unwrap()))
+        .build();
+
+    s3_conf
 }
 
 async fn get_start_block_height(opts: &Opts) -> u64 {
